@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Employee Verification Portal</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+            background: linear-gradient(135deg, #eef2f7 0%, #dbe4ee 100%); 
+            display: flex; justify-content: center; align-items: center; 
+            min-height: 100vh; margin: 0; padding: 20px;
+        }
+        .card { 
+            background: #ffffff; padding: 32px 24px; border-radius: 16px; 
+            box-shadow: 0 10px 25px rgba(0,0,0,0.08); text-align: center; 
+            width: 100%; max-width: 380px; display: none; 
+        }
+        .avatar-wrap {
+            width: 105px; height: 105px; border-radius: 50%; margin: 0 auto 16px;
+            overflow: hidden; background-color: #f1f3f5; border: 3px solid #e2e8f0;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .avatar-wrap img { width: 100%; height: 100%; object-fit: cover; }
+        .avatar-initial { font-size: 38px; font-weight: 600; color: #4a5568; }
+        h2 { margin: 10px 0 6px 0; color: #1a202c; font-size: 22px; }
+        .role { margin: 0 0 10px 0; color: #4a5568; font-size: 15px; font-weight: 500; }
+        .emp-id { font-size: 13px; color: #718096; margin-bottom: 18px; letter-spacing: 0.5px; }
+        .badge { 
+            display: inline-block; padding: 8px 20px; border-radius: 50px; 
+            font-weight: 700; font-size: 13px; letter-spacing: 0.8px; text-transform: uppercase; 
+        }
+        .active { background-color: #def7ec; color: #03543f; border: 1px solid #84e1bc; }
+        .expired { background-color: #fde8e8; color: #9b1c1c; border: 1px solid #f8b4b4; }
+        .suspended { background-color: #fef08a; color: #713f12; border: 1px solid #facc15; }
+        .unknown { background-color: #f3f4f6; color: #374151; }
+        .error-card { color: #9b1c1c; font-size: 15px; line-height: 1.5; }
+        .loader { 
+            border: 4px solid #e2e8f0; border-top: 4px solid #3182ce; 
+            border-radius: 50%; width: 44px; height: 44px; 
+            animation: spin 0.8s linear infinite; margin: 0 auto; 
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+    <div id="loading" class="loader"></div>
+    <div id="result-card" class="card"></div>
+
+    <script>
+        const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vS8m8vVBBIKUcNsaAvW3ZC3Ao49Hpq9GUMImJkftl7ojTv6nhf3ynV7dyCz8rT2kx0dolq_9YAEoFxI/pub?gid=0&single=true&output=csv';
+
+        function parseCSVLine(line) {
+            const result = [];
+            let current = '';
+            let inQuotes = false;
+            for (let i = 0; i < line.length; i++) {
+                const char = line[i];
+                if (char === '"' || char === "'") {
+                    inQuotes = !inQuotes;
+                } else if (char === ',' && !inQuotes) {
+                    result.push(current.trim());
+                    current = '';
+                } else {
+                    current += char;
+                }
+            }
+            result.push(current.trim());
+            return result;
+        }
+
+        async function verifyEmployee() {
+            const params = new URLSearchParams(window.location.search);
+            const targetId = (params.get('id') || '').trim().toUpperCase();
+
+            const loadingEl = document.getElementById('loading');
+            const cardEl = document.getElementById('result-card');
+
+            if (!targetId) {
+                loadingEl.style.display = 'none';
+                cardEl.innerHTML = `<div class="error-card">⚠️ <strong>Invalid Request</strong><br>Koi Employee ID provide nahi ki gayi.</div>`;
+                cardEl.style.display = 'block';
+                return;
+            }
+
+            try {
+                const response = await fetch(CSV_URL);
+                if (!response.ok) throw new Error('Fetch failed');
+
+                const csvText = await response.text();
+                const lines = csvText.split(/\r?\n/).filter(line => line.trim().length > 0);
+                
+                let found = null;
+                for (let i = 1; i < lines.length; i++) {
+                    const cols = parseCSVLine(lines[i]);
+                    if (cols.length >= 4) {
+                        const empId = cols[0].replace(/['"]/g, '').trim().toUpperCase();
+                        if (empId === targetId) {
+                            found = {
+                                id: cols[0].replace(/['"]/g, '').trim(),
+                                name: cols[1]?.replace(/['"]/g, '').trim() || 'N/A',
+                                role: cols[2]?.replace(/['"]/g, '').trim() || 'N/A',
+                                status: cols[3]?.replace(/['"]/g, '').trim() || 'Unknown',
+                                photo: cols[4]?.replace(/['"]/g, '').trim() || ''
+                            };
+                            break;
+                        }
+                    }
+                }
+
+                loadingEl.style.display = 'none';
+                cardEl.style.display = 'block';
+
+                if (found) {
+                    const statusClass = found.status.toLowerCase();
+                    const photoHtml = (found.photo && found.photo.startsWith('http')) 
+                        ? `<img src="${found.photo}" alt="${found.name}">` 
+                        : `<span class="avatar-initial">${found.name.charAt(0)}</span>`;
+
+                    cardEl.innerHTML = `
+                        <div class="avatar-wrap">${photoHtml}</div>
+                        <h2>${found.name}</h2>
+                        <div class="role">${found.role}</div>
+                        <div class="emp-id">EMPLOYEE ID: <strong>${found.id}</strong></div>
+                        <div><span class="badge ${statusClass}">${found.status}</span></div>
+                    `;
+                } else {
+                    cardEl.innerHTML = `
+                        <div class="error-card">
+                            <span style="font-size: 34px;">❌</span><br>
+                            <strong>Verification Failed</strong><br>
+                            <span style="color:#718096; font-size:13px;">Employee ID "${targetId}" database mein nahi mila.</span>
+                        </div>
+                    `;
+                }
+            } catch (err) {
+                loadingEl.style.display = 'none';
+                cardEl.innerHTML = `<div class="error-card">⚙️ <strong>Connection Error</strong><br>Database se connect karne mein problem aayi.</div>`;
+                cardEl.style.display = 'block';
+            }
+        }
+
+        window.onload = verifyEmployee;
+    </script>
+</body>
+</html>
